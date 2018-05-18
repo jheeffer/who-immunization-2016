@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+body {
+  margin: 20px;
+  padding: 12px;
+  font-size: 15px;
+  line-height: 1.4em;
+  font-family: sans-serif;
+  background: #fff;
+	width: 1260px;
+}
+text {
+  font-size: 12px;
+}
+.node rect {
+  shape-rendering: crispEdges;
+  fill: none;
+}
+.node.depth-0 rect {
+}
+.depth-0 text {
+  fill: #fff;
+  font-size: 10px;
+}
+.depth-1 rect {
+}
+.depth-1 text {
+  font-weight: bold;
+  font-size: 13px;
+  transform: translate(0, 3px);
+}
+.depth-2 rect {
+  fill: #eee;
+}
+.depth-2 text {
+  font-size: 10px;
+  fill: #fff;
+}
+.node--hover rect {
+  stroke: #aaa;
+}
+#color-legend {
+	float: right;
+	margin-top: 12px;
+	margin-right: 96px;
+	border: 1px solid #d0d0d0;
+	padding: 2px;
+}
+</style>
+<title class="region-name"> Subnational Treemap</title>
+<div id="color-legend"></div>
+<h1><span class="region-name"></span> Subnational Dropout by Administrative Level for 2016</h1>
+<p>Colored by percentage of <em>(DTP1 - DTP3) / (DTP1)</em> vaccinations.<br/>
+Approximtely sized by sum of DTP1 vaccinations for Admin1 regions.<br/>
+Countries without subnational data colored light grey.</p>
+<svg width="1260" height="800"></svg>
+<script src="//d3js.org/d3.v4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.24.0/d3-legend.js"></script>
+<script>
+var region = "EMRO";
+var scalefactor = 1;
+
+d3.selectAll(".region-name").text(region.slice(0,-1));
+
+var svg = d3.select("svg"),
+    width = +svg.attr("width"),
+    height = +svg.attr("height");
+
+var format = d3.format(".1%");
+
+var color = d3.scaleThreshold()
+  .domain([0, 0.05, 0.1, 0.2, 0.3])
+  .range(["#875f87", "#1a9850", "#66bd63", "#fdae61", "#f46d43", "#d73027"]);
+
+/* Legends */
+d3.select("#color-legend").datum({key: "color-scale"})
+var color_svg = d3.select("#color-legend").append("svg")
+  .attr("xmlns", "http://www.w3.org/2000/svg")
+  .attr("width", (scalefactor*140))
+  .attr("height", (scalefactor*130))
+  .style("font-family", "Helvetica, Arial, sans-serif")
+  .append("g")
+  .attr("transform", "scale(" + scalefactor +")")
+
+color_svg.append("rect")
+  .style("fill", "#fff")
+  .attr("width", 140)
+  .attr("height", 130);
+
+color_svg.append("g")
+  .attr("class", "legendQuant")
+  .attr("transform", "translate(10,24)");
+
+var color_legend = d3.legendColor()
+  .labelFormat(function(d) {
+    return isNaN(d) ? 0 : format(d);
+  })
+  .scale(color)
+  .ascending(true);
+
+color_svg.select(".legendQuant")
+  .call(color_legend);
+
+color_svg.append("text")
+  .text("2016 Dropout Rate")
+  .attr("y", 14)
+  .attr("x", 6)
+
+color_svg.selectAll("text")
+  .style("font-size", "13px")
+  .style("font-family", "Helvetica, Arial, sans-serif")
+  .style("font-weight", "bold")
+  .text(function() {
+    var d = d3.select(this).text();
+    if (d == "30% to 0") return "30% to 100%";
+    if (d == "0 to 0.0%") return "<0%";
+    return d;
+  });
+/* End Legends */
+
+
+var treemap = d3.treemap()
+    .tile(d3.treemapSquarify.ratio(1.6))
+    .size([width, height])
+    .paddingOuter(function(d) {
+      return d.depth < 2 ? 2 : 0;
+    })
+    .paddingTop(function(d) {
+      return d.depth < 2 ? 18 : 2;
+    })
+    .paddingInner(function(d) {
+      return d.depth < 2 ? 1 : 1;
+    })
+    .round(true);
+
+var national_lookup = {};
+var countries = [];
+
+d3.csv("../data/country_name_lookup.csv", function(error, country_names) {
+  countries = country_names.filter(function(d) {
+    return d.WHO_REGION == region.slice(0,3);
+  }).map(function(d) {
+    return d.ISO; 
+  });
+
+  d3.csv("../data/wuenic_master_07_06_2017.csv", function(error, national) {
+    var national_2016 = national.filter(function(d) {
+      return d.Year == "2016" && d.Vaccine == "dtp1";
+    });
+
+    national_2016.forEach(function(d) {
+      national_lookup[d.ISOCountryCode.toUpperCase()] = d;
+    });
+
+    d3.csv("../data/subnational_06_29_2017.csv", function(error, data) {
+      if (error) throw error;
+      data = data.filter(function(d) {
+        return d.CalcNum !== "" && d.Denominator !== "0" && d.RefCty_NameWorkingEnglish !== "Nigeria";
+      });
+
+      // get list of unique vaccines
+      //console.log(d3.set(data.map(function(d) { return d.Vaccode; })).values())
+
+      data.forEach(function(d) {
+        d.Year = +d.annum;
+        d.numerator = +d["CalcNum"];
+        d.denominator = +d["Denominator"];
+      });
+
+      var nested = d3.nest()
+        .key(function(d) { return "World"; })
+        .key(function(d) { return d["iso"]; })
+        .key(function(d) { return d["Admin1"]; })
+        .sortValues(function(a,b) { return b.metric - a.metric; })
+        .rollup(function(leaves) {
+          var datum = {
+            iso: leaves[0].iso,
+            country: leaves[0].RefCty_NameWorkingEnglish,
+            region: leaves[0].RefCty_RefReg_WHOregionCode,
+            years: d3.set(leaves.map(function(d) { return d.annum; })).values(),
+            admin1: leaves[0].Admin1,
+            admin2s: leaves.map(function(d) { return d.Admin1; }),
+            dtp1: vaccine_sum(leaves, "DTP1"),
+            dtp3: vaccine_sum(leaves, "DTP3"),
+            mcv1: vaccine_sum(leaves, "MCV1")
+          }
+          datum.metric = (datum.dtp1 - datum.dtp3) / datum.dtp1;
+          return datum;
+        })
+        .entries(data.filter(function(d) {
+          return d.RefCty_RefReg_WHOregionCode == region;
+        }))
+
+      console.log(nested);
+
+      function vaccine_sum(arr, vacc) {
+        return d3.sum(arr.filter(function(d) { return d.Vaccode == vacc; }), function(d) { return d.CalcNum; });
+      };
+
+      countries.forEach(function(country) {
+        var existing = nested[0].values.map(function(d) { return d.key; })
+        var index = existing.indexOf(country);
+        if (index == -1) {
+          nested[0].values.push({
+            key: country,
+            values: [{
+              admin1: "No administrative data",
+              dtp1: national_lookup[country]["SurvivingInfantsUNPD"],
+              numerator: national_lookup[country]["ChildrenVaccinated"],
+              metric: national_lookup[country]["ReportedCoverage"],
+              national_only: true
+            }]
+          })
+        }
+      });
+
+      var root = d3.hierarchy({
+          key: "root",
+          values: nested[0].values
+        }, function(d) {
+          return d.values;  
+        })
+        .sum(function(d) { return "value" in d ? d.value.dtp1 : d.dtp1; })
+        .sort(function(a, b) { return b.value - a.value; });
+      treemap(root);
+      console.log(root);
+
+      var cell = svg
+        .selectAll(".node")
+        .data(root.descendants())
+        .enter().append("g")
+          .attr("transform", function(d) { return "translate(" + d.x0 + "," + d.y0 + ")"; })
+          .attr("class", function(d,i) { return "node depth-" + d.depth; })
+          .each(function(d) { d.node = this; })
+          .on("click", function(d) { console.log(d); })
+          .on("mouseover", hovered(true))
+          .on("mouseout", hovered(false));
+      cell.append("rect")
+          .attr("id", function(d,i) { return "rect-" + i; })
+          .attr("width", function(d) { return d.x1 - d.x0; })
+          .attr("height", function(d) { return d.y1 - d.y0; })
+          .style("fill", function(d) {
+            if (d.data.national_only) { return "#d0d0d0"; }
+            return "children" in d ? null : color(d.data.value["metric"]);
+          });
+      cell.append("clipPath")
+          .attr("id", function(d,i) { return "clip-" + i; })
+        .append("use")
+          .attr("xlink:href", function(d,i) { return "#rect-" + i; });
+
+      var label = cell.append("text")
+          .attr("clip-path", function(d,i) { return "url(#clip-" + i + ")"; });
+
+      label
+        .append("tspan")
+        .datum(function(d) { return d.data; })
+          .attr("x", function(d, i) { return 2; })
+          .attr("y", 12)
+          .text(function(d) {
+            if (d.key in national_lookup) { return national_lookup[d.key].Country }
+            if ("value" in d) { return d.value.admin1; }
+           });
+
+      label
+        .append("tspan")
+        .datum(function(d) { return d.data; })
+          .attr("x", function(d, i) { return 2; })
+          .attr("y", 23)
+          .text(function(d) {
+            if ("value" in d) { return format(d.value.metric) + " DOR"; }
+           });
+
+      label
+        .append("tspan")
+        .datum(function(d) { return d.data; })
+          .attr("x", function(d, i) { return 2; })
+          .attr("y", 34)
+          .text(function(d) {
+            if ("value" in d) { return d3.format(",")(d.value.dtp1); }
+           });
+    });
+
+    function hovered(hover) {
+      return function(d) {
+        d3.selectAll(d.ancestors().map(function(d) { return d.node; }))
+            .classed("node--hover", hover)
+          .select("rect")
+            .attr("width", function(d) { return d.x1 - d.x0 - hover; })
+            .attr("height", function(d) { return d.y1 - d.y0 - hover; });
+      };
+    }
+
+  });
+});
+</script>
