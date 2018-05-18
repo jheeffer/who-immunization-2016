@@ -1,0 +1,418 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vaccination Rates by Country</title>
+<script src="http://d3js.org/d3.v4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.24.0/d3-legend.js"></script>
+<style>
+body {
+  margin: 20px;
+  padding: 13px;
+  line-height: 1.4em;
+  font-family: sans-serif;
+  background: #fff;
+}
+.value:hover {
+  background: #fff;
+}
+.plot {
+  margin-left: 20px;
+}
+.value {
+  margin-left: 20px;
+}
+#multiples > div {
+  float: left
+}
+h4 {
+  margin-bottom: 0.2em;
+  font-size: 1.2em;
+}
+</style>
+<body>
+<h2>Vaccination Rates by Country</h2>
+<p></p>
+</div>
+<!--<div id="size-legend" class="svgToPng">-->
+</div>
+<div id="size-legend" class="svgToPng"></div>
+<div id="color-legend" class="svgToPng"></div>
+<div id="multiples"></div>
+</body>
+<script>
+var scalefactor = 4;
+
+var width = 480;
+var height = 420;
+
+var margin = {top: 68, right: 80, bottom: 32, left: 12},
+    chartwidth = width - margin.left - margin.right
+    chartheight = height - margin.top - margin.bottom;
+
+var radius = d3.scaleSqrt()
+  .range([2,15])
+  .domain([1, 500000])
+  .clamp(true);
+
+var color = d3.scaleThreshold()
+  .domain([0.6, 0.7, 0.8, 0.9, 0.95, 1.0001, 50])
+  .range(["#d73027", "#f46d43", "#fdae61", "#91cf60", "#66bd63", "#1a9850", "#875f87"]);
+
+/* Legends */
+d3.select("#color-legend").datum({key: "color-scale"})
+var color_svg = d3.select("#color-legend").append("svg")
+  .attr("xmlns", "http://www.w3.org/2000/svg")
+  .attr("width", (scalefactor*130))
+  .attr("height", (scalefactor*140))
+  .style("font-family", "Helvetica, Arial, sans-serif")
+  .append("g")
+  .attr("transform", "scale(" + scalefactor +")")
+
+color_svg.append("rect")
+  .style("fill", "#fff")
+  .attr("width", 130)
+  .attr("height", 140);
+
+color_svg.append("g")
+  .attr("class", "legendQuant")
+  .attr("transform", "translate(20,20)");
+
+var color_legend = d3.legendColor()
+  .labelFormat(function(d) {
+    return isNaN(d) ? 0 : d3.format(".0%")(d);
+  })
+  .scale(color)
+  .ascending(true);
+
+color_svg.select(".legendQuant")
+  .call(color_legend);
+
+color_svg.append("text")
+  .text("2016 DTP3 Coverage")
+  .attr("y", 10)
+  .attr("x", 6)
+
+color_svg.selectAll("text")
+  .style("font-size", "10px")
+  .style("font-family", "Helvetica, Arial, sans-serif")
+  .style("font-weight", "bold")
+  .text(function() {
+    var text = d3.select(this).text()
+    if (text == "100% to 5000%") {
+      return ">100%";
+    }
+    return text;
+  });
+
+d3.select("#size-legend").datum({key: "radius-scale"})
+var radius_svg = d3.select("#size-legend")
+    .append("svg")
+    .attr("xmlns", "http://www.w3.org/2000/svg")
+    .attr("width", (scalefactor*310))
+    .attr("height", (scalefactor*60))
+    .style("font-family", "Helvetica, Arial, sans-serif")
+    .append("g")
+    .attr("transform", "scale(" + scalefactor +")")
+
+radius_svg.append("rect")
+  .style("fill", "#fff")
+  .attr("width", 310)
+  .attr("height", 60);
+
+radius_svg.append("text")
+  .text("Number of Surviving Infants")
+  .attr("y", 10)
+  .attr("x", 6)
+
+radius_svg.append("g")
+  .attr("class", "legendQuant")
+  .attr("transform", "translate(10,22)");
+
+radius_svg.selectAll("text")
+
+
+var formatSi = d3.format(".2s");
+
+function formatAbbreviation(x) {
+  var s = formatSi(x);
+  switch (s[s.length - 1]) {
+    case "G": return s.slice(0, -1) + "B";
+  }
+  return s;
+}
+
+var radius_legend = d3.legendSize()
+  .scale(radius)
+  .shape('circle')
+  .cells([10, 1000, 10000, 50000, 100000, 250000, 500000])
+  .shapePadding(28)
+  .labelOffset(8)
+  .labelFormat(function(d) {
+    return d3.format(",.2r")(d);
+  })
+  .orient('horizontal');
+
+radius_svg.select(".legendQuant")
+  .call(radius_legend);
+
+radius_svg.selectAll("circle")
+  .style("fill", "#333")
+  .style("stroke-width", "1")
+  .style("stroke", "#fff")
+
+radius_svg.selectAll("text")
+  .style("font-size", "9px")
+  .style("font-family", "Helvetica, Arial, sans-serif")
+  .style("font-weight", "bold")
+/* End Legends */
+
+var wuenicLookup = {};
+
+
+d3.csv('../data/wuenic_master_07_06_2017.csv', function(error, wuenic_raw) {
+  wuenic_raw.filter(function(d) {
+      return d.Year == "2016" && d.Vaccine == "dtp3";
+    })
+    .forEach(function(d) {
+      wuenicLookup[d.ISOCountryCode] = d;
+    });
+
+  d3.csv("../data/Stamen20171121-revised.csv", function(error, data) {
+    data = data.filter(function(d) {
+      return d.Vaccode == "DTP3" && d.CalcNum !== "" && d.Denominator !== "" && d.Denominator !== "0" && d.Admin2 !== "" && d.Admin1 !== "Summary";
+    });
+
+    data.forEach(function(d) {
+      d.Year = +d.annum;
+      d.metric = +d["Coverage"];
+      d.Unvacc = +(d["Denominator"].replace(/,/g, ''));
+    });
+
+    console.log(d3.max(data, function(d) { return d.Unvacc; }))
+
+    var nested = d3.nest()
+      .key(function(d) { return d.RefCty_NameWorkingEnglish; })
+      .sortKeys(d3.ascending)
+      .key(function(d) { return d.Admin1 + " " + d.Admin2; })
+      .entries(data);
+
+    var charts = d3.select("#multiples")
+      .html("")
+      .selectAll("div")
+      .data(nested)
+      .enter().append("div")
+      .attr("class", "svgToPng")
+      .style("margin", "0 0 30px 0")
+      .style("height", (scalefactor * height) + "px")
+      .style("width", (scalefactor * width) + "px");
+
+    charts.each(function(raw) {
+      //console.log(raw);
+      var chart_data = raw.values;
+
+      var coveragescale = d3.scaleLinear()
+        .range([0,0.72*chartwidth,chartwidth])
+        .domain([1,100,1000])
+        .clamp(true);
+      
+      var max_unvacc = d3.max(chart_data, function(d) { return d.values[0].Unvacc; });
+      var unvaccinatedscale = d3.scaleLinear()
+        .range([chartheight, 0])
+        .domain([0, max_unvacc])
+        .nice();
+
+      var xAxis = d3.axisTop()
+          .scale(coveragescale)
+          .tickFormat(function(d) {
+            if (d >= 1000) return ">1000%";
+            return d + "%";
+          })
+          .tickValues([0,10,20,30,40,50,60,70,80,90,100,400,700,1000]);
+
+      var yAxis = d3.axisRight()
+          .scale(unvaccinatedscale)
+          .tickFormat(d3.format(","))
+          .tickSize(-chartwidth);
+
+      xAxis.tickSize(-chartheight)
+      yAxis.scale(unvaccinatedscale);
+
+      var svg = d3.select(this).append("svg")
+          .attr("xmlns", "http://www.w3.org/2000/svg")
+          .attr("width", scalefactor*width)
+          .attr("height", scalefactor*height)
+          .style("font-family", "Helvetica, Arial, sans-serif")
+          .style("font-size", "10px")
+        .append("g")
+          .attr("transform", "scale(" + scalefactor + ")")
+        .append("g")
+          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      svg.append("rect")
+        .attr("transform", "translate(" + -margin.left + "," + -margin.top + ")")
+        .style("fill", "#fff")
+        .attr("width", width)
+        .attr("height", height);
+
+      svg.append("text")
+        .attr("x", 0)
+        .attr("y", 12-margin.top)
+        .style("font-size", "14px")
+        .attr("alignment-baseline", "hanging")
+        .style("font-weight", "bold")
+        .text(wuenicLookup[raw.values[0].values[0].iso.toLowerCase()].Country)  // get country name from official WUENIC
+
+      svg.append("g")
+          .attr("class", "x axis")
+          .call(xAxis)
+          .selectAll("text")
+          .attr("y", -12)
+
+      svg
+        .select(".x.axis")
+        .append("text")
+        .attr("y", -28)
+        .attr("x", 0)
+        .attr("class", "label")
+        .attr("fill", "#000")
+        .attr("text-anchor", "start")
+        .text("2016 DTP3 Coverage, Admin 2 Regions");
+
+      svg.append("g")
+          .attr("transform", "translate(" + chartwidth + ",0)")
+          .attr("class", "y axis")
+          .call(yAxis)
+
+       svg
+        .select(".y.axis")
+        .append("text")
+        .attr("class", "label")
+        .attr("transform", "rotate(90) translate(-6,-62)")
+        .attr("fill", "#000")
+        .text("Surviving Infants");
+     
+      svg.selectAll(".y.axis .tick text")
+          .attr("x", 12);
+
+      svg.selectAll(".axis path")
+          .remove();
+
+      svg.selectAll(".axis line")
+          .style("stroke", "#e7e7e7");
+
+      /* Average lines */
+      svg.each(function(d) {
+        var key = d.values[0].values[0].iso.toLowerCase();
+        d3.select(this).append("line")
+          .attr("x1", coveragescale(+wuenicLookup[key].WUENIC))
+          .attr("x2", coveragescale(+wuenicLookup[key].WUENIC))
+          .attr("y1", 0)
+          .attr("y2", chartheight+6)
+          .style("stroke", "#555")
+          .style("stroke-dasharray", "3 2")
+
+        d3.select(this).append("text")
+          .attr("x", coveragescale(+wuenicLookup[key].WUENIC))
+          .attr("y", chartheight+16)
+          .style("text-anchor", "middle")
+          .text("WUENIC Coverage " + (+wuenicLookup[key].WUENIC) + "%")
+          .style("fill", "#444")
+          .style("font-size", "10px")
+
+        d3.select(this).append("line")
+          .attr("x1", coveragescale(+wuenicLookup[key].ReportedCoverage))
+          .attr("x2", coveragescale(+wuenicLookup[key].ReportedCoverage))
+          .attr("y1", 0)
+          .attr("y2", chartheight+6)
+          .style("stroke", "#888")
+          .style("stroke-dasharray", "1 1")
+
+        d3.select(this).append("text")
+          .attr("x", coveragescale(+wuenicLookup[key].ReportedCoverage))
+          .attr("y", chartheight+27)
+          .style("text-anchor", "middle")
+          .text("Reported Coverage " + (+wuenicLookup[key].ReportedCoverage) + "%")
+          .style("fill", "#555")
+          .style("font-size", "10px")
+      });
+
+      var rows = svg
+        .selectAll("g.chart")
+        .data(chart_data)    
+        .enter().append("g")
+        .attr("class", "chart");
+
+      rows.selectAll("circle")
+        .data(function(d) { return d.values; })
+        .enter().append("circle")
+        .attr("cx", function(d) { return coveragescale(d.metric); })
+        .attr("cy", function(d) { return unvaccinatedscale(d.Unvacc); })
+        .attr("r", function(d) { return radius(d.Unvacc); })
+        .style("fill", function(d) { return color(d.metric/100); })
+        .style("stroke", "#fff")
+        .style("stroke-opacity", 0.6)
+        .sort(function(a,b) { return a.Unvacc - b.Unvacc; })
+        .on("mouseover", function(d) { console.log(d); })
+        .append("title")
+        .text(function(d) { return d.metric + " metric"; });
+
+     });
+   d3.selectAll(".svgToPng").each(function(raw,i) {
+      var width = +d3.select(this).select("svg").attr("width");
+      var height = +d3.select(this).select("svg").attr("height");
+
+			/* REPLACE WITH CANVAS, increased by scale factor */
+			var canvas = d3.select(this).append("canvas")
+				.attr("width", width)
+				.attr("height", height)
+				.style("width", (width) + "px")
+				.style("height", (height) + "px");
+			var context = canvas.node().getContext("2d");
+
+			// Convert SVG to Canvas
+			// see: https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Drawing_DOM_objects_into_a_canvas
+			var DOMURL = window.URL || window.webkitURL || window;
+
+			var svgString = domNodeToString(d3.select(this).select("svg").node());
+
+			var image = new Image();
+			var svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+			var url = DOMURL.createObjectURL(svgBlob);
+
+			image.onload = function() {
+				context.drawImage(image, 0, 0);
+				DOMURL.revokeObjectURL(url);
+			}
+
+			image.src = url;
+
+			canvas.on("click", function() {
+				var a = document.createElement("a");
+				a.download = "bubbleplot-admin2-" + raw.key.replace(/\'/g, "").replace(/ /g, "") + ".png";
+				a.href = canvas.node().toDataURL("image/png");
+				a.click();
+			});
+   });
+  });
+});
+
+// Get the string representation of a DOM node (removes the node)
+function domNodeToString(domNode) {
+  var element = document.createElement("div");
+  element.appendChild(domNode);
+  return element.innerHTML;
+}
+
+/*
+// this code snippets downloads all the images
+d3.selectAll("canvas")
+  .each(function(d,i) {
+    var self = this;
+    var f = function() {
+      self.click()
+    }
+    setTimeout(f, 30*i);
+})
+*/
+
+</script>
+
