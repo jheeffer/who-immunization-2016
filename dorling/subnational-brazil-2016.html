@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+body {
+  width: 960px;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+#color-legend,
+#size-legend {
+  font-weight: bold;
+  font-size: 12px;
+  width: 300px;
+  position: absolute;
+  z-index: 100;
+}
+
+#color-legend {
+  top: 140px;
+  left: 20px;
+}
+
+#size-legend {
+  top: 360px;
+  left: 20px;
+}
+
+#states,
+#municipalities {
+  fill: none;
+  stroke: #ddd;
+}
+
+h3 {
+  margin-left: 60px;
+}
+
+h4 {
+  margin-bottom: 0;
+}
+circle {
+  opacity: 0.9;
+  fill: #333;
+}
+
+</style>
+<body>
+<div id="color-legend">
+<h4>Reported Coverage</h4>
+</div>
+<div id="size-legend">
+<h4>Surviving Infants</h4>
+</div>
+
+<script src="//d3js.org/d3.v3.min.js"></script>
+<script src="//d3js.org/d3.geo.projection.v0.min.js"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<script src="../lib/d3-legend.js"></script>
+<script>
+var year = "2016";
+var vaccine = "DTP3";
+
+d3.select("body")
+  .append("h3")
+  .text(year + " Coverage and Surviving Infants for " + vaccine);
+
+var width = 960,
+    height = 900,
+    padding = 0.5;
+
+var radius = d3.scale.sqrt()
+  .domain([1, 2500000])
+  .range([1.5,32]);
+
+var color = d3.scale.threshold()
+  .domain([0.6, 0.7, 0.8, 0.9, 0.95, 1.0001, 50])
+  .range(["#d73027", "#f46d43", "#fdae61", "#91cf60", "#66bd63", "#1a9850", "#875f87"]);
+
+/* Legends */
+
+var color_svg = d3.select("#color-legend").append("svg");
+
+color_svg.append("g")
+  .attr("class", "legendQuant")
+  .attr("transform", "translate(10,10)");
+
+var color_legend = d3.legend.color()
+  .labelFormat(function(d) {
+    return isNaN(d) ? 0 : d3.format("%")(d);
+  })
+  .scale(color)
+  .ascending(true);
+
+color_svg.select(".legendQuant")
+  .call(color_legend);
+
+color_svg
+  .selectAll("text")
+  .text(function() {
+    var d = d3.select(this).text();
+    if (d == "100% to 5000%") return ">100%";
+    return d;
+  });
+
+var radius_svg = d3.select("#size-legend").append("svg");
+
+radius_svg.append("g")
+  .attr("class", "legendQuant")
+  .attr("transform", "translate(10,40)");
+
+var formatSi = d3.format(".2s");
+
+function formatAbbreviation(x) {
+  var s = formatSi(x);
+  switch (s[s.length - 1]) {
+    case "G": return s.slice(0, -1) + "B";
+  }
+  return s;
+}
+
+var radius_legend = d3.legend.size()
+  .scale(radius)
+  .shape('circle')
+  .cells([10, 100, 1000, 10000, 100000, 250000])
+  .shapePadding(10)
+  .labelOffset(8)
+  .labelFormat(function(d) {
+    if (d == radius.domain()[0]) return "<" + formatSi(d);
+    return formatSi(d);
+  })
+  .orient('horizontal');
+
+radius_svg.select(".legendQuant")
+.call(radius_legend)
+  .selectAll("circle")
+  .style("opacity", 0.9)
+  .style("fill", "#444");
+
+radius_svg.selectAll("text")
+  .style("font-size", "7px")
+  .style("font-family", "Helvetica");
+/* End Legends */
+
+var projection = d3.geo.mercator()
+    .scale(940)
+    .translate([width / 2, 0.22*height])
+    .rotate([60,0])
+    .precision(.1);
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var force = d3.layout.force()
+    .charge(0)
+    .gravity(0)
+    .size([width, height]);
+
+var centroidLookup = {};
+var included = [];
+var excluded = [];
+
+d3.json("../data/world.json", function(error, world) {
+  svg.selectAll(".country")
+      .data(topojson.feature(world, world.objects.general).features)
+      .enter().append("path")
+      .attr("class", "country")
+      .attr("d", path)
+      .style("fill", "#e6e6e6")
+      .style("stroke", "#fff");
+
+  d3.json("../data/adm2_centroids.geojson", function(error, world) {
+    if (error) throw error;
+    console.log(world);
+
+    d3.csv("../data/subnational_06_29_2017.csv", function(error2, data) {
+      if (error2) throw error2;
+      data = data.filter(function(d) {
+        return d.Vaccode == vaccine && d.Admin2 != "" && d.iso == "BRA";
+      });
+
+      data.forEach(function(d) {
+        d.Coverage = +d.Coverage;
+        d.CalcNum = +d.CalcNum;
+        d.Denominator = +d.Denominator;
+        d.id = sanitize(d.Admin1 + "-" + d.Admin2);
+      });
+
+      world.features.forEach(function(d) {
+        centroidLookup[sanitize(d.properties.ADM1_NAME + "-" + d.properties.ADM2_NAME)] = d;
+      });
+
+      included = data.filter(function(d) {
+        return d.id in centroidLookup;
+      });
+
+      excluded = data.filter(function(d) {
+        return (!(d.id in centroidLookup));
+      });
+
+      var centroids = included
+        .map(function(d) {
+          return {
+            data: d,
+            centroid: projection(centroidLookup[d.id].geometry.coordinates)
+          };
+        });
+
+      /*
+      svg.selectAll(".country")
+          .data(topojson.feature(world, world.objects.general).features)
+          .enter().append("path")
+          .attr("class", "country")
+          .attr("d", path)
+          .style("fill", "#e6e6e6");
+          */
+
+      var nodes = centroids
+        .map(function(d) {
+          var point = d.centroid,
+              coverage = d.data.Coverage,
+              value = d.data.Denominator,
+              country = d.data.id;
+          return {
+            x: point[0], y: point[1],
+            x0: point[0], y0: point[1],
+            r: radius(value),
+            value: value,
+            coverage: coverage,
+            country: country
+          };
+        });
+
+      var countries = [
+        "Afghanistan",
+        "Angola",
+        "Argentina",
+        "Australia",
+        "Bangladesh",
+        "Brazil",
+        "Canada",
+        "Chad",
+        "China",
+        "Colombia",
+        "Congo",
+        "Democratic Republic of the Congo",
+        "Ecuador",
+        "Egypt",
+        "Equatorial Guinea",
+        "Ethiopia",
+        "France",
+        "Germany",
+        "Guatemala",
+        "Guinea",
+        "Haiti",
+        "India",
+        "Indonesia",
+        "Iraq",
+        "Italy",
+        "Japan",
+        "Lao People’s Democratic Republic",
+        "Liberia",
+        "Madagascar",
+        "Malawi",
+        "Mali",
+        "Mauritania",
+        "Mexico",
+        "Myanmar",
+        "Niger",
+        "Nigeria",
+        "Pakistan",
+        "Papua New Guinea",
+        "Peru",
+        "Philippines",
+        "Russian Federation",
+        "Somalia",
+        "South Africa",
+        "South Sudan",
+        "Spain",
+        "Sudan",
+        "Syrian Arab Republic",
+        "Uganda",
+        "Ukraine",
+        "United States of America",
+        "Yemen",
+      ];
+
+      var labelled_nodes = nodes.filter(function(d) {
+        return countries.indexOf(d.country) > -1;
+      });
+
+      force
+        .nodes(nodes)
+        .on("tick", tick)
+        .start();
+
+      var node = svg.selectAll("circle")
+        .data(nodes, function(d) { return d.country; })
+        .enter().append("circle")
+        .attr("r", function(d) { return d.r; })
+        .style("stroke", "none")
+        .style("opacity", 0.9)
+        .style("fill", function(d) { return color(d.coverage/100) || "#999"; })
+        .on("mouseover", function(d) {
+          console.log(d.value);
+          console.log(d.country); 
+        });
+
+      var labels = svg.selectAll("text")
+        .data(labelled_nodes, function(d) { return d.country; })
+        .enter().append("text")
+        .attr("text-anchor", "middle")
+        .attr("alignment-baseline", "middle")
+        .style("font-weight", "bold")
+        .style("fill", "#222")
+        .text(function(d) { return d.country; })
+        .style("font-size", "7px")
+        .style("font-family", "Helvetica");
+
+
+      function tick(e) {
+        node.each(gravity(e.alpha * .3))
+            .each(collide(.2))
+            .attr("cx", function(d) { return d.x; })
+            .attr("cy", function(d) { return d.y; });
+
+        labels.attr("x", function(d) { return d.x; })
+            .attr("y", function(d) { return d.y; });
+      }
+
+      function gravity(k) {
+        return function(d) {
+          d.x += (d.x0 - d.x) * k;
+          d.y += (d.y0 - d.y) * k;
+        };
+      }
+
+      function collide(k) {
+        var q = d3.geom.quadtree(nodes);
+        return function(node) {
+          var nr = node.r + padding,
+              nx1 = node.x - nr,
+              nx2 = node.x + nr,
+              ny1 = node.y - nr,
+              ny2 = node.y + nr;
+          q.visit(function(quad, x1, y1, x2, y2) {
+            if (quad.point && (quad.point !== node)) {
+              var x = node.x - quad.point.x,
+                  y = node.y - quad.point.y,
+                  l = x * x + y * y,
+                  r = nr + quad.point.r;
+              if (l < r * r) {
+                l = ((l = Math.sqrt(l)) - r) / l * k;
+                node.x -= x *= l;
+                node.y -= y *= l;
+                quad.point.x += x;
+                quad.point.y += y;
+              }
+            }
+            return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+          });
+        };
+      }
+
+    });
+  });
+});
+
+function sanitize(str) {
+  return str.replace(/_/g,"")    // remove underscores
+            .replace(/ /g,"")    // remove spaces
+            .toLowerCase()       // to lower case
+};
+
+</script>
