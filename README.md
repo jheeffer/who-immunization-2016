@@ -1,7 +1,10 @@
-# who-immunization-2016
-2016 immunization report, released in 2017 
+# WHO Immunization Report
 
-## Sample Visualizations
+Visualization prototypes for the [2016 immunization report](http://www.who.int/immunization/monitoring_surveillance/who-immuniz.pdf?ua=1), released in 2017. These prototypes were created for WHO by Stamen Design.
+
+### Dorling Cartogram
+
+<img src="https://user-images.githubusercontent.com/156229/40962157-9421c10a-6859-11e8-9ae8-0e76b743a10c.png" width=600 />
 
 ### Subnational Bubbleplot
 
@@ -46,8 +49,22 @@ For the punchcard and subnational bubbleplots at the country level, PNG images o
          self.click()
        }
        setTimeout(f, 120*i);
-     })```
+     })
+```
 
 Your browser will attempt to download several hundred images over the next 15-45 seconds. A prompt may appear to let the web page download many images. If this happens, it may interrupt the download of some countries. Run the command again after dismissing the prompt to download all the country PNGs.
 
 If you're running the examples with the command at the top of the README, you can test this download script with [this bubbleplot example](http://localhost:8010/bubbleplot/admin2_scaled_12_04_2017.html).
+
+## Contact
+
+#### World Health Organization
+
+* [Jan Grevendonk](mailto:grevendonkj@who.int)
+* [Marta Gacic-Dobo](mailto:gacicdobom@who.int)
+
+#### Stamen Design
+
+* [Kai Chang](kai@stamen.com)
+* [Alan McConchie](alan@stamen.com)
+* [Alec Burch](alec@stamen.com)
